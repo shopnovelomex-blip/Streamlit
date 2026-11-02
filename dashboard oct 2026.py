@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
+import plotly.express as px
 
 st.set_page_config(page_title="Dashboard de Ventas y Rendimiento", layout="wide")
 
@@ -77,7 +78,7 @@ with col5:
 st.markdown("---")
 
 # --- PESTAÑAS DE ANÁLISIS ---
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Distribuciones e Impactos", "🌎 Geografía y Segmentos", "🔄 Retornos y Devoluciones", "🔍 Caso de Estudio: Pérdidas West"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Distribuciones e Impactos", "🌎 Geografía y Segmentos", "🔄 Retornos y Devoluciones", "🔍 Caso de Estudio: Pérdidas West", "🗺️ Mapa de Ventas"])
 
 with tab1:
     st.subheader("Comportamiento de Ventas y Rendimiento")
@@ -241,3 +242,50 @@ with tab4:
         'Ganancias_Totales': '${:,.2f}',
         'Descuento_Medio': '{:.1%}'
     }))
+
+with tab5:
+    st.subheader("Ventas por estado")
+    st.caption("La escala de color representa las ventas totales de los estados según los filtros seleccionados.")
+
+    # Plotly requiere abreviaturas postales para representar estados de EE. UU.
+    codigos_estados = {
+        'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR',
+        'California': 'CA', 'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE',
+        'District of Columbia': 'DC', 'Florida': 'FL', 'Georgia': 'GA', 'Hawaii': 'HI',
+        'Idaho': 'ID', 'Illinois': 'IL', 'Indiana': 'IN', 'Iowa': 'IA', 'Kansas': 'KS',
+        'Kentucky': 'KY', 'Louisiana': 'LA', 'Maine': 'ME', 'Maryland': 'MD',
+        'Massachusetts': 'MA', 'Michigan': 'MI', 'Minnesota': 'MN', 'Mississippi': 'MS',
+        'Missouri': 'MO', 'Montana': 'MT', 'Nebraska': 'NE', 'Nevada': 'NV',
+        'New Hampshire': 'NH', 'New Jersey': 'NJ', 'New Mexico': 'NM', 'New York': 'NY',
+        'North Carolina': 'NC', 'North Dakota': 'ND', 'Ohio': 'OH', 'Oklahoma': 'OK',
+        'Oregon': 'OR', 'Pennsylvania': 'PA', 'Rhode Island': 'RI',
+        'South Carolina': 'SC', 'South Dakota': 'SD', 'Tennessee': 'TN', 'Texas': 'TX',
+        'Utah': 'UT', 'Vermont': 'VT', 'Virginia': 'VA', 'Washington': 'WA',
+        'West Virginia': 'WV', 'Wisconsin': 'WI', 'Wyoming': 'WY'
+    }
+
+    ventas_por_estado = (
+        df_filtrado.groupby('State', as_index=False)['Sales']
+        .sum()
+        .rename(columns={'Sales': 'Ventas'})
+    )
+    ventas_por_estado['Abreviatura'] = ventas_por_estado['State'].map(codigos_estados)
+    ventas_por_estado = ventas_por_estado.dropna(subset=['Abreviatura'])
+
+    if ventas_por_estado.empty:
+        st.warning("No hay ventas por estado para mostrar con los filtros seleccionados.")
+    else:
+        fig = px.choropleth(
+            ventas_por_estado,
+            locations='Abreviatura',
+            locationmode='USA-states',
+            color='Ventas',
+            scope='usa',
+            color_continuous_scale='YlOrRd',
+            hover_name='State',
+            hover_data={'Ventas': ':$,.2f', 'Abreviatura': False},
+            labels={'Ventas': 'Ventas totales'},
+            title='Ventas totales por estado'
+        )
+        fig.update_layout(height=650, margin={'r': 0, 't': 50, 'l': 0, 'b': 0})
+        st.plotly_chart(fig, use_container_width=True)
