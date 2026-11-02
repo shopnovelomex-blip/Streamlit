@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -110,6 +109,45 @@ with tab1:
 
 with tab2:
     st.subheader("Ventas y Ganancias por Región")
+
+    st.subheader("Top 10 de productos más vendidos por categoría")
+    if df_filtrado.empty:
+        st.warning("No hay productos para mostrar con los filtros seleccionados.")
+    else:
+        # Sumar las unidades vendidas por producto y categoría y seleccionar los 10 primeros de cada categoría.
+        productos_por_categoria = (
+            df_filtrado.groupby(['Category', 'Product Name'], as_index=False)['Quantity']
+            .sum()
+        )
+        top_productos_por_categoria = (
+            productos_por_categoria.sort_values('Quantity', ascending=False)
+            .groupby('Category', sort=True)
+            .head(10)
+        )
+        categorias = sorted(top_productos_por_categoria['Category'].dropna().unique())
+
+        if not categorias:
+            st.info("No hay productos con categoría disponible para mostrar.")
+        else:
+            fig, axes = plt.subplots(
+                len(categorias), 1,
+                figsize=(14, max(5, 3.8 * len(categorias))),
+                squeeze=False
+            )
+            colores = sns.color_palette('Set2', n_colors=len(categorias))
+            for ax, categoria, color in zip(axes.flat, categorias, colores):
+                datos_categoria = top_productos_por_categoria[
+                    top_productos_por_categoria['Category'] == categoria
+                ].sort_values('Quantity', ascending=True)
+                ax.barh(datos_categoria['Product Name'], datos_categoria['Quantity'], color=color)
+                ax.set_title(categoria)
+                ax.set_xlabel("Unidades vendidas")
+                ax.set_ylabel("")
+                ax.tick_params(axis='y', labelsize=8)
+            fig.suptitle("Los 10 productos con más unidades vendidas en cada categoría", y=1.01)
+            fig.tight_layout()
+            st.pyplot(fig)
+
     col_t2_1, col_t2_2 = st.columns(2)
     
     with col_t2_1:
