@@ -1,0 +1,205 @@
+%%writefile app.py
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+
+st.set_page_config(page_title="Dashboard de Ventas y Rendimiento", layout="wide")
+
+# Ruta del archivo
+file_path = 'SalidaVentas.xlsx'
+
+@st.cache_data
+def load_data():
+    df = pd.read_excel(file_path)
+    # Asegurar tipos de datos correctos
+    df['Order Date'] = pd.to_datetime(df['Order Date'])
+    df['Ship Date'] = pd.to_datetime(df['Ship Date'])
+    return df
+
+try:
+    df = load_data()
+except Exception as e:
+    st.error(f"No se pudo cargar el archivo de datos: {e}")
+    st.stop()
+
+st.title("📈 Dashboard Avanzado de Ventas, Logística y Devoluciones")
+st.markdown("---")
+
+# --- BARRA LATERAL CON FILTROS ---
+st.sidebar.header("Filtros de Datos")
+
+# Filtro de Región
+regiones = ["Todas"] + list(df['Region'].unique())
+region_sel = st.sidebar.selectbox("Región", regiones)
+
+# Filtro de Estado dependiente de la Región seleccionada
+if region_sel != "Todas":
+    estados_disponibles = ["Todos"] + list(df[df['Region'] == region_sel]['State'].unique())
+else:
+    estados_disponibles = ["Todos"] + list(df['State'].unique())
+estado_sel = st.sidebar.selectbox("Estado", estados_disponibles)
+
+# Filtro de Segmento de Cliente
+segmentos = ["Todos"] + list(df['Segment'].unique())
+segmento_sel = st.sidebar.selectbox("Segmento de Cliente", segmentos)
+
+# Aplicar filtros al DataFrame principal
+df_filtrado = df.copy()
+if region_sel != "Todas":
+    df_filtrado = df_filtrado[df_filtrado['Region'] == region_sel]
+if estado_sel != "Todos":
+    df_filtrado = df_filtrado[df_filtrado['State'] == estado_sel]
+if segmento_sel != "Todos":
+    df_filtrado = df_filtrado[df_filtrado['Segment'] == segmento_sel]
+
+# --- KPIs PRINCIPALES (Métricas clave) ---
+ventas_totales = df_filtrado['Sales'].sum()
+ganancias_totales = df_filtrado['Profit'].sum()
+articulos_vendidos = df_filtrado['Quantity'].sum()
+margen_promedio = (ganancias_totales / ventas_totales) * 100 if ventas_totales != 0 else 0
+
+# Tasa de Devoluciones (usando la columna 'es devolución?')
+tasa_devolucion = (df_filtrado['es devolución?'] == 'Sí').mean() * 100
+
+col1, col2, col3, col4, col5 = st.columns(5)
+with col1:
+    st.metric("Ventas Totales", f"${ventas_totales:,.2f}")
+with col2:
+    st.metric("Ganancias Totales", f"${ganancias_totales:,.2f}", delta=f"Margen: {margen_promedio:.1f}%")
+with col3:
+    st.metric("Artículos Vendidos", f"{int(articulos_vendidos):,}")
+with col4:
+    st.metric("Descuento Promedio", f"{df_filtrado['Discount'].mean():.1%}")
+with col5:
+    st.metric("Tasa de Devolución", f"{tasa_devolucion:.1f}%", delta="Meta < 5%", delta_color="inverse")
+
+st.markdown("---")
+
+# --- PESTAÑAS DE ANÁLISIS ---
+tab1, tab2, tab3, tab4 = st.tabs(["📊 Distribuciones e Impactos", "🌎 Geografía y Segmentos", "🔄 Retornos y Devoluciones", "🔍 Caso de Estudio: Pérdidas West"])
+
+with tab1:
+    st.subheader("Comportamiento de Ventas y Rendimiento")
+    col_t1_1, col_t1_2 = st.columns(2)
+    
+    with col_t1_1:
+        limite_sales = df['Sales'].quantile(0.95)
+        df_filtrado_sales = df_filtrado[df_filtrado['Sales'] <= limite_sales]
+        fig, ax = plt.subplots(figsize=(10, 5))
+        sns.histplot(data=df_filtrado_sales, x='Sales', kde=True, ax=ax, color='royalblue')
+        ax.set_title(f'Distribución de Ventas (Hasta Percentil 95: ${limite_sales:.2f})')
+        st.pyplot(fig)
+        
+    with col_t1_2:
+        limite_inf_profit = df['Profit'].quantile(0.025)
+        limite_sup_profit = df['Profit'].quantile(0.975)
+        df_filtrado_profit = df_filtrado[(df_filtrado['Profit'] >= limite_inf_profit) & (df_filtrado['Profit'] <= limite_sup_profit)]
+        fig, ax = plt.subplots(figsize=(10, 5))
+        sns.histplot(data=df_filtrado_profit, x='Profit', kde=True, ax=ax, color='forestgreen')
+        ax.set_title(f'Distribución de Profit (Rango Central del 95%)')
+        st.pyplot(fig)
+
+    st.subheader("Análisis de Correlación")
+    correlacion = df_filtrado['Sales'].corr(df_filtrado['Profit'])
+    st.write(f"El coeficiente de correlación de Pearson actual entre Ventas y Ganancias es: **{correlacion:.4f}**")
+    fig, ax = plt.subplots(figsize=(12, 4))
+    sns.regplot(data=df_filtrado, x='Sales', y='Profit', scatter_kws={'alpha':0.3, 'color':'royalblue'}, line_kws={'color':'red'}, ax=ax)
+    st.pyplot(fig)
+
+with tab2:
+    st.subheader("Ventas y Ganancias por Región")
+    col_t2_1, col_t2_2 = st.columns(2)
+    
+    with col_t2_1:
+        ventas_por_region = df_filtrado.groupby('Region')['Sales'].sum().reset_index()
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.pie(ventas_por_region['Sales'], labels=ventas_por_region['Region'], autopct='%1.1f%%', startangle=140, colors=sns.color_palette('pastel'))
+        ax.set_title("Proporción de Ventas por Región")
+        st.pyplot(fig)
+        
+    with col_t2_2:
+        ganancias_por_region = df_filtrado.groupby('Region')['Profit'].sum().reset_index()
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.pie(ganancias_por_region['Profit'], labels=ganancias_por_region['Region'], autopct='%1.1f%%', startangle=140, colors=sns.color_palette('pastel'))
+        ax.set_title("Proporción de Ganancias por Región")
+        st.pyplot(fig)
+
+    st.subheader("Logística y Eficiencia de Envío")
+    tiempos_envio = df_filtrado.groupby('Ship Mode')['Tiempo de envio'].mean().reset_index().sort_values(by='Tiempo de envio')
+    col_ship1, col_ship2 = st.columns([1, 2])
+    with col_ship1:
+        st.write("**Tiempo Promedio de Envío (Días):**")
+        st.dataframe(tiempos_envio.style.format({'Tiempo de envio': '{:.1f} días'}))
+    with col_ship2:
+        fig, ax = plt.subplots(figsize=(10, 4))
+        sns.barplot(data=tiempos_envio, x='Tiempo de envio', y='Ship Mode', palette='Blues_r', ax=ax)
+        ax.set_title("Días promedio de envío según el método seleccionado")
+        st.pyplot(fig)
+
+with tab3:
+    st.subheader("Análisis Cualitativo y Cuantitativo de Devoluciones")
+    df_devoluciones = df_filtrado[df_filtrado['es devolución?'] == 'Sí']
+    
+    if df_devoluciones.empty:
+        st.warning("No se registran devoluciones con los filtros aplicados actualmente.")
+    else:
+        col_ret1, col_ret2 = st.columns(2)
+        with col_ret1:
+            st.write("**Razones Más Comunes de Devolución:**")
+            motivos = df_devoluciones['Return Reason'].value_counts().reset_index()
+            st.dataframe(motivos.rename(columns={'count': 'Cantidad', 'Return Reason': 'Razón'}))
+        with col_ret2:
+            fig, ax = plt.subplots(figsize=(10, 6))
+            sns.countplot(data=df_devoluciones, y='Return Reason', palette='Reds_r', order=df_devoluciones['Return Reason'].value_counts().index, ax=ax)
+            ax.set_title("Frecuencia de Razones de Devolución")
+            st.pyplot(fig)
+            
+        st.write("**Buscador y Visualizador de Notas de Devolución:**")
+        notas_validas = df_devoluciones[df_devoluciones['Notas devolución'].notna()][['Order ID-1', 'Customer Name', 'Notas devolución', 'Aprobador']]
+        st.dataframe(notas_validas, use_container_width=True)
+
+with tab4:
+    st.subheader("Caso Crítico: Estados con Pérdidas en la Región West")
+    st.markdown("Investigamos a fondo los tres estados con pérdidas en el Oeste: **Colorado, Arizona y Oregon**.")
+    
+    df_west = df[df['Region'] == 'West']
+    estados_perdidas = ['Colorado', 'Arizona', 'Oregon']
+    df_perdidas_west = df_west[df_west['State'].isin(estados_perdidas)]
+    
+    col_w1, col_w2 = st.columns(2)
+    with col_w1:
+        st.write("**Métricas generales de los estados analizados:**")
+        resumen_perdidas = df_perdidas_west.groupby('State').agg(
+            Ventas_Totales=('Sales', 'sum'),
+            Ganancias_Totales=('Profit', 'sum'),
+            Descuento_Promedio=('Discount', 'mean'),
+            Total_Pedidos=('Quantity', 'count')
+        ).reset_index()
+        st.dataframe(resumen_perdidas.style.format({
+            'Ventas_Totales': '${:,.2f}',
+            'Ganancias_Totales': '${:,.2f}',
+            'Descuento_Promedio': '{:.1%}'
+        }))
+        
+    with col_w2:
+        st.write("**Relación entre Descuento Aplicado e Impacto Financiero:**")
+        ganancia_desc = df_perdidas_west.groupby(['State', 'Discount'])['Profit'].mean().reset_index()
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.barplot(data=ganancia_desc, x='Discount', y='Profit', hue='State', ax=ax)
+        ax.set_xticklabels([f"{float(x)*100:.0f}%" for x in ganancia_desc['Discount'].unique()])
+        ax.set_ylabel("Ganancia Promedio ($)")
+        st.pyplot(fig)
+        
+    st.subheader("Top 10 Sub-Categorías de Productos Críticos (Mayores Pérdidas)")
+    top_perdidas_subcat = df_perdidas_west.groupby(['State', 'Category', 'Sub-Category']).agg(
+        Ventas_Totales=('Sales', 'sum'),
+        Ganancias_Totales=('Profit', 'sum'),
+        Descuento_Medio=('Discount', 'mean')
+    ).reset_index().sort_values(by='Ganancias_Totales', ascending=True).head(10)
+    st.dataframe(top_perdidas_subcat.style.format({
+        'Ventas_Totales': '${:,.2f}',
+        'Ganancias_Totales': '${:,.2f}',
+        'Descuento_Medio': '{:.1%}'
+    }))
